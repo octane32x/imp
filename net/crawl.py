@@ -1,16 +1,26 @@
 # WEB CRAWL
+# Creates 'ip' directory
+
+#! Good way to terminate without being mid-write?
 
 from random import choice
-from os import mkdir, listdir
-from os.path import isdir
+from os import mkdir, listdir, stat
+from os.path import isdir, isfile
 from socket import gethostbyname
 from urllib.request import urlopen
 
+IP_DIR = './ip/'
+FSUF = '.txt'
+VIS = 'vis'
+TODO = 'todo'
+DEAD = 'dead'
+POP = 'pop'
+TOK = 'tokens'
+IP_FILES = [TODO, DEAD, POP]
+
 URL_PRE = 'https://'
-TODO = 'ip/todo.txt'
-DEAD = 'ip/dead.txt'
-ALPH = 'alph.txt'
-FREQ = 'freq.txt'
+TRASH = ['.jpg', '.jpeg', '.png', '.gif', '.mp3', '.mp4']
+START = ['rodonews.ru'] #'en.wikipedia.org/wiki/List_of_Wikipedias'
 
 def pull(url):
   try:
@@ -18,13 +28,33 @@ def pull(url):
     html = fp.read().decode("utf8")
     fp.close()
     return html
-  except:
-    pass
+  except: pass
   return ''
 
 def lit(c):
   return True if (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or \
                  (c >= '0' and c <= '9') or c == '_' else False
+
+def starts(s, t):
+  if len(t) > len(s): return False
+  i = 0
+  for i in range(len(t)):
+    if s[i] != t[i]: return False
+  return True
+
+def contains(s, t):
+  if len(t) > len(s): return False
+  i = 0
+  for i in range(len(s) - len(t) + 1):
+    j = i
+    f = True
+    for k in range(len(t)):
+      if s[j] != t[k]:
+        f = False
+        break
+      j += 1
+    if f: return True
+  return False
 
 def clean(link):
   i = 0
@@ -34,19 +64,10 @@ def clean(link):
       continue
     i += 1
   if link[-1] == '/': link = link[:-1]
-  i = 0
-  if link[:5] == 'https': i = 5
-  elif link[:4] == 'http': i = 4
-  if i >= len(link): return ''
-  if link[i] == ':': i += 1
-  if i >= len(link): return ''
-  if link[i] == '/': i += 1
-  if i >= len(link): return ''
-  if link[i] == '/': i += 1
-  if i >= len(link): return ''
-  if link[i:i+4] == 'www.': i += 4
-  if i >= len(link): return ''
-  return link[i:]
+  strip = ['https://', 'http://', 'https:', 'http:', 'https', 'http', 'www.']
+  for st in strip:
+    if starts(link, st): link = link[len(st):]
+  return link
 
 def cut(link):
   i = 0
@@ -60,10 +81,8 @@ def merge(maps):
   for m in maps:
     for key in m.keys():
       val = m[key]
-      if key in r.keys():
-        r[key] += val
-      else:
-        r[key] = val
+      if key in r.keys(): r[key] += val
+      else: r[key] = val
   return r
 
 def tokens(html):
@@ -77,10 +96,8 @@ def tokens(html):
     while i < len(html) and lit(html[i]):
       tok += html[i].lower()
       i += 1
-    if tok in toks.keys():
-      toks[tok] += 1
-    else:
-      toks[tok] = 1
+    if tok in toks.keys(): toks[tok] += 1
+    else: toks[tok] = 1
   return toks
 
 def links(html):
@@ -94,34 +111,59 @@ def links(html):
     while html[j] != '"':
       j += 1
     link = clean(html[i+1:j])
-    if link != '': r[link] = True
+    f = False
+    for junk in TRASH:
+      if contains(link, junk):
+        f = True
+        break
+    if (not f) and link != '': r[link] = True
     i = j+1
   return r
 
 # Data
-urls = {} # {url : True}
-todo = {} # {ip : {url : from_url}}
-dead = {} # {ip : {url : from_url}}
-pop = {}  # {ip : {'todo' : {url : from_url}, \
-          #        'dead' : {url : from_url}, \
-          #        'pop'  : {url : from_url}, \
-          #        'tokens' : {token : count}}}
-toks = {} # {token : count}
+vis  = {} # {'urlhash:ip' : True}
+pop  = {} # {ip : True}
+todo = {} # {ip : {url : from_ip}}
+dead = {} # {ip : {url : from_ip}}
+
+# {'todo' : {url : from_ip},
+#  'dead' : {url : from_ip},
+#  'pop'  : {url : from_ip},
+#  'tokens' : {tok : count}}
+def load_ip(ip):
+  m = {}
+  if not isdir(IP_DIR + d): return m
+
+  for fs in IP_FILES:
+    f = open(IP_DIR + d + '/' + fs + FSUF, 'r')
+    s = f.read()
+    f.close()
+    lines = s.split('\n')[:-1]
+    mm = {}
+    for line in lines:
+      tok = line.split(' ')
+      if len(tok) >= 2:
+        mm[tok[0]] = tok[1]
+    m[fs] = mm
+
+  f = open(IP_DIR + d + '/' + TOK + FSUF, 'r')
+  s = f.read()
+  f.close()
+  lines = s.split('\n')[:-1]
+  mm = {}
+  for line in lines:
+    tok = line.split(' ')
+    mm[tok[0]] = int(tok[1])
+  m[TOK] = mm
+  return m
 
 def write_web():
-  f = open(ALPH, 'w')
-  a = sorted(toks.keys())
-  for key in a:
-    f.write(key + ' : ' + str(toks[key]) + '\n')
+  f = open(IP_DIR + VIS + FSUF, 'w')
+  for n in vis.keys():
+    f.write(n + '\n')
   f.close()
 
-  f = open(FREQ, 'w')
-  b = dict(sorted(toks.items(), key=lambda item: item[1], reverse=True))
-  for key in b.keys():
-    f.write(key + ' : ' + str(b[key]) + '\n')
-  f.close()
-
-  f = open(TODO, 'w')
+  f = open(IP_DIR + TODO + FSUF, 'w')
   for ip in todo.keys():
     f.write(ip + '\n')
     for url in todo[ip].keys():
@@ -129,7 +171,7 @@ def write_web():
     f.write('\n')
   f.close()
 
-  f = open(DEAD, 'w')
+  f = open(IP_DIR + DEAD + FSUF, 'w')
   for ip in dead.keys():
     f.write(ip + '\n')
     for url in dead[ip].keys():
@@ -137,34 +179,62 @@ def write_web():
     f.write('\n')
   f.close()
 
-def write_ip(ip):
-  if ip not in listdir('./ip/'):
-    mkdir('./ip/' + ip)
+def write_ip(ip, m):
+  if ip not in listdir(IP_DIR):
+    mkdir(IP_DIR + ip)
 
-  f = open('./ip/' + ip + '/todo.txt', 'w')
-  for url in pop[ip]['todo'].keys():
-    f.write(url + ' ' + pop[ip]['todo'][url] + '\n')
-  f.close()
+  for fs in IP_FILES:
+    f = open(IP_DIR + ip + '/' + fs + FSUF, 'w')
+    for url in m[fs].keys():
+      f.write(url + ' ' + m[fs][url] + '\n')
+    f.close()
 
-  f = open('./ip/' + ip + '/dead.txt', 'w')
-  for url in pop[ip]['dead'].keys():
-    f.write(url + ' ' + pop[ip]['dead'][url] + '\n')
-  f.close()
-
-  f = open('./ip/' + ip + '/pop.txt', 'w')
-  for url in pop[ip]['pop'].keys():
-    f.write(url + ' ' + pop[ip]['pop'][url] + '\n')
-  f.close()
-
-  f = open('./ip/' + ip + '/tokens.txt', 'w')
-  for tok in pop[ip]['tokens'].keys():
-    f.write(tok + ' ' + str(pop[ip]['tokens'][tok]) + '\n')
+  f = open(IP_DIR + ip + '/' + TOK + FSUF, 'w')
+  for tok in m[TOK].keys():
+    f.write(tok + ' ' + str(m[TOK][tok]) + '\n')
   f.close()
 
 # MAIN
 
+# Init env
+if not isdir(IP_DIR):
+  mkdir(IP_DIR)
+ft = IP_DIR + VIS + FSUF
+if not isfile(ft):
+  f = open(ft, 'w')
+  f.close()
+ft = IP_DIR + TODO + FSUF
+if not isfile(ft):
+  f = open(ft, 'w')
+  for url in START:
+    ip = gethostbyname(cut(url))
+    hs = str(hash(url)) + ':' + ip
+    vis[hs] = True
+    f.write(ip + '\n' + url + ' NULL\n\n')
+  f.close()
+ft = IP_DIR + DEAD + FSUF
+if not isfile(ft):
+  f = open(ft, 'w')
+  f.close()
+
+# Visited links
+f = open(IP_DIR + VIS + FSUF, 'r')
+s = f.read()
+f.close()
+lines = s.split('\n')[:-1]
+i = 0
+while i < len(lines):
+  vis[lines[i]] = True
+  i += 1
+
+# IPs with data
+dirs = listdir(IP_DIR)
+for d in dirs:
+  if isdir(IP_DIR + d):
+    pop[d] = True
+
 # Unvisited IPs
-f = open(TODO, 'r')
+f = open(IP_DIR + TODO + FSUF, 'r')
 s = f.read()
 f.close()
 lines = s.split('\n')[:-1]
@@ -175,14 +245,14 @@ while i < len(lines):
   m = {}
   while i < len(lines) and lines[i] != '':
     tok = lines[i].split(' ')
-    urls[tok[0]] = True
-    m[tok[0]] = tok[1]
+    if len(tok) >= 2:
+      m[tok[0]] = tok[1]
     i += 1
   todo[ip] = m
   i += 1
 
 # Dead IPs
-f = open(DEAD, 'r')
+f = open(IP_DIR + DEAD + FSUF, 'r')
 s = f.read()
 f.close()
 lines = s.split('\n')[:-1]
@@ -193,82 +263,48 @@ while i < len(lines):
   m = {}
   while i < len(lines) and lines[i] != '':
     tok = lines[i].split(' ')
-    urls[tok[0]] = True
-    m[tok[0]] = tok[1]
+    if len(tok) >= 2:
+      m[tok[0]] = tok[1]
     i += 1
   dead[ip] = m
   i += 1
-
-# Populated IPs
-dirs = listdir('./ip/')
-for d in dirs:
-  if not isdir('./ip/' + d): continue
-  f = open('./ip/' + d + '/todo.txt', 'r')
-  s = f.read()
-  f.close()
-  lines = s.split('\n')[:-1]
-  m = {}
-  for line in lines:
-    tok = line.split(' ')
-    urls[tok[0]] = True
-    m[tok[0]] = tok[1]
-  pop[d] = {}
-  pop[d]['todo'] = m
-
-  f = open('./ip/' + d + '/dead.txt', 'r')
-  s = f.read()
-  f.close()
-  lines = s.split('\n')[:-1]
-  m = {}
-  for line in lines:
-    tok = line.split(' ')
-    urls[tok[0]] = True
-    m[tok[0]] = tok[1]
-  pop[d]['dead'] = m
-
-  f = open('./ip/' + d + '/pop.txt', 'r')
-  s = f.read()
-  f.close()
-  lines = s.split('\n')[:-1]
-  m = {}
-  for line in lines:
-    tok = line.split(' ')
-    urls[tok[0]] = True
-    m[tok[0]] = tok[1]
-  pop[d]['pop'] = m
-
-  f = open('./ip/' + d + '/tokens.txt', 'r')
-  s = f.read()
-  f.close()
-  lines = s.split('\n')[:-1]
-  m = {}
-  for line in lines:
-    tok = line.split(' ')
-    m[tok[0]] = int(tok[1])
-  pop[d]['tokens'] = m
-
-# All tokens
-for ip in pop.keys():
-  for tok in pop[ip]['tokens'].keys():
-    count = pop[ip]['tokens'][tok]
-    if tok in toks.keys():
-      toks[tok] += count
-    else:
-      toks[tok] = count
 
 # Main loop
 while True:
   while len(todo) > 0:
     print()
-    print(str(len(todo)) + ' pending IPs')
-    print(str(len(pop)) + ' IPs with data')
-    print(str(len(toks)) + ' tokens')
+    print('    ' + str(len(todo)) + ' pending IPs')
+    print('    ' + str(len(pop)) + ' IPs with data')
+    print('    ' + str(len(dead)) + ' dead IPs')
+
+    b = 0
+    #print()
+    n = stat(IP_DIR + VIS + FSUF).st_size
+    #print('vis ' + str(n))
+    b += n
+    n = stat(IP_DIR + TODO + FSUF).st_size
+    #print('todo ' + str(n))
+    b += n
+    n = stat(IP_DIR + DEAD + FSUF).st_size
+    #print('dead ' + str(n))
+    b += n
+    dirs = listdir(IP_DIR)
+    for d in dirs:
+      if not isdir(IP_DIR + d): continue
+      n = 0
+      n += stat(IP_DIR + d + '/' + TODO + FSUF).st_size
+      n += stat(IP_DIR + d + '/' + DEAD + FSUF).st_size
+      n += stat(IP_DIR + d + '/' + POP + FSUF).st_size
+      n += stat(IP_DIR + d + '/' + TOK + FSUF).st_size
+      b += n
+    print('    ' + str(float(b) / (1024 * 1024)) + ' MB of data')
     print()
 
     ip, m = choice(list(todo.items()))
     del todo[ip]
     _dead = {}
     while len(m) > 0:
+      if len(_dead) > 20: break
       url, urlf = choice(list(m.items()))
       del m[url]
 
@@ -280,21 +316,23 @@ while True:
 
       # Create new IP profile
       m2 = {}
-      m2['todo'] = m
-      m2['dead'] = _dead
-      m2['pop'] = {url : urlf}
+      m2[TODO] = m
+      m2[DEAD] = _dead
+      m2[POP] = {url : urlf}
       t = tokens(html)
-      toks = merge([toks, t])
-      m2['tokens'] = t
-      pop[ip] = m2
-      write_ip(ip)
+      print('-> ' + str(len(t)) + ' tokens')
+      m2[TOK] = t
+      write_ip(ip, m2)
+      pop[ip] = True
 
       a = links(html)
       for link in a:
-        if link in urls.keys(): continue
-        urls[link] = True
         try:
           ipn = gethostbyname(cut(link))
+          if ipn == '0.0.0.0': exit(0) #!
+          hs = str(hash(link)) + ':' + ipn
+          if hs in vis.keys(): continue
+          vis[hs] = True
           if ipn in todo.keys():
             todo[ipn][link] = url
           elif ipn in dead.keys():
@@ -302,14 +340,15 @@ while True:
             todo[ipn][link] = url
             del dead[ipn]
           elif ipn in pop.keys():
-            pop[ipn]['todo'][link] = url
-            write_ip(ipn)
+            mm = load_ip(ipn)
+            mm[TODO][link] = url
+            write_ip(ipn, mm)
           else:
             todo[ipn] = {link : url}
         except: continue
       break
 
-    if len(m) == 0 and len(_dead) > 0 and ip not in pop.keys():
+    if len(_dead) > 0 and ip not in pop.keys():
       print('DEAD')
       dead[ip] = _dead
     write_web()
